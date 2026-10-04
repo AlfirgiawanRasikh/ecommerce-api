@@ -75,6 +75,10 @@ func main() {
 	router.GET("/products", productHandler.GetAll)
 	router.GET("/products/:slug", productHandler.GetBySlug)
 
+	router.POST("/products", productHandler.Create)
+	router.PUT("/products/:id", productHandler.Update)
+	router.DELETE("/products/:id", productHandler.Delete)
+
 	log.Println("Server running on http://localhost:8080")
 
 	if err := router.Run(":8080"); err != nil {

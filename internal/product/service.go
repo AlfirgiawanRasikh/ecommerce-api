@@ -25,3 +25,25 @@ func (s *Service) GetBySlug(
 ) (*Product, error) {
 	return s.repository.GetBySlug(ctx, slug)
 }
+
+func (s *Service) Create(
+	ctx context.Context,
+	request CreateProductRequest,
+) (*Product, error) {
+	return s.repository.Create(ctx, request)
+}
+
+func (s *Service) Update(
+	ctx context.Context,
+	id int64,
+	request UpdateProductRequest,
+) (*Product, error) {
+	return s.repository.Update(ctx, id, request)
+}
+
+func (s *Service) Delete(
+	ctx context.Context,
+	id int64,
+) error {
+	return s.repository.Delete(ctx, id)
+}

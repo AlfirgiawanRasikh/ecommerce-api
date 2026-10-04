@@ -5,6 +5,7 @@ import (
 	"strconv"
 
 	"github.com/gin-gonic/gin"
+	"github.com/jackc/pgx/v5"
 )
 
 type Handler struct {
@@ -121,4 +122,110 @@ func parsePositiveInt(
 	}
 
 	return number
+}
+
+func (h *Handler) Create(c *gin.Context) {
+	var request CreateProductRequest
+
+	if err := c.ShouldBindJSON(&request); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"message": "invalid request body",
+			"error":   err.Error(),
+		})
+		return
+	}
+
+	product, err := h.service.Create(
+		c.Request.Context(),
+		request,
+	)
+
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"message": "failed to create product",
+			"error":   err.Error(),
+		})
+		return
+	}
+
+	c.JSON(http.StatusCreated, product)
+}
+
+func (h *Handler) Update(c *gin.Context) {
+	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+
+	if err != nil || id < 1 {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"message": "invalid product id",
+		})
+		return
+	}
+
+	var request UpdateProductRequest
+
+	if err := c.ShouldBindJSON(&request); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"message": "invalid request body",
+			"error":   err.Error(),
+		})
+		return
+	}
+
+	product, err := h.service.Update(
+		c.Request.Context(),
+		id,
+		request,
+	)
+
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			c.JSON(http.StatusNotFound, gin.H{
+				"message": "product not found",
+			})
+			return
+		}
+
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"message": "failed to update product",
+			"error":   err.Error(),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, product)
+}
+
+func (h *Handler) Delete(c *gin.Context) {
+	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+
+	if err != nil || id < 1 {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"message": "invalid product id",
+		})
+		return
+	}
+
+	err = h.service.Delete(
+		c.Request.Context(),
+		id,
+	)
+
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			c.JSON(http.StatusNotFound, gin.H{
+				"message": "product not found",
+			})
+			return
+		}
+
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"message": "failed to delete product",
+			"error":   err.Error(),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"message": "product deleted successfully",
+	})
 }

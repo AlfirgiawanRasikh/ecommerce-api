@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -503,4 +504,298 @@ func ParseFloat(value string) (*float64, error) {
 	}
 
 	return &number, nil
+}
+
+func (r *Repository) Create(
+	ctx context.Context,
+	request CreateProductRequest,
+) (*Product, error) {
+	tx, err := r.db.Begin(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback(ctx)
+
+	var productID int64
+
+	err = tx.QueryRow(ctx, `
+		INSERT INTO products (
+			name,
+			slug,
+			description,
+			base_price,
+			weight_grams,
+			category_id,
+			brand_id
+		)
+		VALUES ($1, $2, $3, $4, $5, $6, $7)
+		RETURNING id
+	`,
+		request.Name,
+		request.Slug,
+		request.Description,
+		request.BasePrice,
+		request.WeightGrams,
+		request.CategoryID,
+		request.BrandID,
+	).Scan(&productID)
+
+	if err != nil {
+		return nil, err
+	}
+
+	for _, image := range request.Images {
+		_, err = tx.Exec(ctx, `
+			INSERT INTO product_images (
+				product_id,
+				url,
+				alt,
+				is_primary,
+				sort_order
+			)
+			VALUES ($1, $2, $3, $4, $5)
+		`,
+			productID,
+			image.URL,
+			image.Alt,
+			image.IsPrimary,
+			image.SortOrder,
+		)
+
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	for _, variant := range request.Variants {
+		_, err = tx.Exec(ctx, `
+			INSERT INTO product_variants (
+				product_id,
+				sku,
+				size,
+				color_name,
+				color_hex,
+				price,
+				stock
+			)
+			VALUES ($1, $2, $3, $4, $5, $6, $7)
+		`,
+			productID,
+			variant.SKU,
+			variant.Size,
+			variant.ColorName,
+			variant.ColorHex,
+			variant.Price,
+			variant.Stock,
+		)
+
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return nil, err
+	}
+
+	return r.GetByID(ctx, productID)
+}
+
+func (r *Repository) GetByID(
+	ctx context.Context,
+	id int64,
+) (*Product, error) {
+	var product Product
+
+	err := r.db.QueryRow(ctx, `
+		SELECT
+			p.id,
+			p.name,
+			p.slug,
+			p.description,
+			p.base_price,
+			p.weight_grams,
+			c.id,
+			c.name,
+			c.slug,
+			b.id,
+			b.name,
+			b.slug
+		FROM products p
+		JOIN categories c ON c.id = p.category_id
+		JOIN brands b ON b.id = p.brand_id
+		WHERE p.id = $1
+	`, id).Scan(
+		&product.ID,
+		&product.Name,
+		&product.Slug,
+		&product.Description,
+		&product.BasePrice,
+		&product.WeightGrams,
+		&product.Category.ID,
+		&product.Category.Name,
+		&product.Category.Slug,
+		&product.Brand.ID,
+		&product.Brand.Name,
+		&product.Brand.Slug,
+	)
+
+	if err != nil {
+		return nil, err
+	}
+
+	images, err := r.getImages(ctx, product.ID)
+	if err != nil {
+		return nil, err
+	}
+
+	variants, err := r.getVariants(ctx, product.ID)
+	if err != nil {
+		return nil, err
+	}
+
+	product.Images = images
+	product.Variants = variants
+
+	return &product, nil
+}
+
+func (r *Repository) Update(
+	ctx context.Context,
+	id int64,
+	request UpdateProductRequest,
+) (*Product, error) {
+	tx, err := r.db.Begin(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback(ctx)
+
+	var productID int64
+
+	err = tx.QueryRow(ctx, `
+		UPDATE products
+		SET
+			name = $1,
+			slug = $2,
+			description = $3,
+			base_price = $4,
+			weight_grams = $5,
+			category_id = $6,
+			brand_id = $7,
+			updated_at = NOW()
+		WHERE id = $8
+		RETURNING id
+	`,
+		request.Name,
+		request.Slug,
+		request.Description,
+		request.BasePrice,
+		request.WeightGrams,
+		request.CategoryID,
+		request.BrandID,
+		id,
+	).Scan(&productID)
+
+	if err != nil {
+		return nil, err
+	}
+
+	// Hapus images lama
+	_, err = tx.Exec(ctx, `
+		DELETE FROM product_images
+		WHERE product_id = $1
+	`, productID)
+
+	if err != nil {
+		return nil, err
+	}
+
+	// Insert images baru
+	for _, image := range request.Images {
+		_, err = tx.Exec(ctx, `
+			INSERT INTO product_images (
+				product_id,
+				url,
+				alt,
+				is_primary,
+				sort_order
+			)
+			VALUES ($1, $2, $3, $4, $5)
+		`,
+			productID,
+			image.URL,
+			image.Alt,
+			image.IsPrimary,
+			image.SortOrder,
+		)
+
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	// Hapus variants lama
+	_, err = tx.Exec(ctx, `
+		DELETE FROM product_variants
+		WHERE product_id = $1
+	`, productID)
+
+	if err != nil {
+		return nil, err
+	}
+
+	// Insert variants baru
+	for _, variant := range request.Variants {
+		_, err = tx.Exec(ctx, `
+			INSERT INTO product_variants (
+				product_id,
+				sku,
+				size,
+				color_name,
+				color_hex,
+				price,
+				stock
+			)
+			VALUES ($1, $2, $3, $4, $5, $6, $7)
+		`,
+			productID,
+			variant.SKU,
+			variant.Size,
+			variant.ColorName,
+			variant.ColorHex,
+			variant.Price,
+			variant.Stock,
+		)
+
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return nil, err
+	}
+
+	return r.GetByID(ctx, productID)
+}
+
+func (r *Repository) Delete(
+	ctx context.Context,
+	id int64,
+) error {
+	result, err := r.db.Exec(ctx, `
+		DELETE FROM products
+		WHERE id = $1
+	`, id)
+
+	if err != nil {
+		return err
+	}
+
+	if result.RowsAffected() == 0 {
+		return pgx.ErrNoRows
+	}
+
+	return nil
 }
