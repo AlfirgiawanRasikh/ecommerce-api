@@ -1,0 +1,124 @@
+package product
+
+import (
+	"net/http"
+	"strconv"
+
+	"github.com/gin-gonic/gin"
+)
+
+type Handler struct {
+	service *Service
+}
+
+func NewHandler(service *Service) *Handler {
+	return &Handler{
+		service: service,
+	}
+}
+
+func (h *Handler) GetAll(c *gin.Context) {
+	page := parsePositiveInt(
+		c.DefaultQuery("page", "1"),
+		1,
+	)
+
+	limit := parsePositiveInt(
+		c.DefaultQuery("limit", "20"),
+		20,
+	)
+
+	if limit > 100 {
+		limit = 100
+	}
+
+	minPrice, err := ParseFloat(
+		c.Query("minPrice"),
+	)
+
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"message": "invalid minPrice",
+		})
+		return
+	}
+
+	maxPrice, err := ParseFloat(
+		c.Query("maxPrice"),
+	)
+
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"message": "invalid maxPrice",
+		})
+		return
+	}
+
+	query := ProductQuery{
+		Search:   c.Query("search"),
+		Category: c.Query("category"),
+		Brand:    c.Query("brand"),
+		Size:     c.Query("size"),
+		Color:    c.Query("color"),
+		MinPrice: minPrice,
+		MaxPrice: maxPrice,
+		Sort:     c.DefaultQuery("sort", "newest"),
+		Page:     page,
+		Limit:    limit,
+	}
+
+	result, err := h.service.GetAll(
+		c.Request.Context(),
+		query,
+	)
+
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"message": "failed to get products",
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"data": result.Products,
+		"pagination": gin.H{
+			"page":        result.Page,
+			"limit":       result.Limit,
+			"total":       result.Total,
+			"totalPages":  result.TotalPages,
+			"hasNextPage": result.Page < result.TotalPages,
+			"hasPrevPage": result.Page > 1,
+		},
+	})
+}
+
+func (h *Handler) GetBySlug(c *gin.Context) {
+	slug := c.Param("slug")
+
+	product, err := h.service.GetBySlug(
+		c.Request.Context(),
+		slug,
+	)
+
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{
+			"message": "product not found",
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, product)
+}
+
+func parsePositiveInt(
+	value string,
+	fallback int,
+) int {
+	number, err := strconv.Atoi(value)
+
+	if err != nil || number < 1 {
+		return fallback
+	}
+
+	return number
+}
