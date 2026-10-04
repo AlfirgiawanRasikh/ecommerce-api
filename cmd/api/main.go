@@ -8,6 +8,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/joho/godotenv"
 
+	"ecommerce-api/internal/category"
 	"ecommerce-api/internal/database"
 	"ecommerce-api/internal/product"
 )
@@ -27,6 +28,10 @@ func main() {
 	productRepository := product.NewRepository(db)
 	productService := product.NewService(productRepository)
 	productHandler := product.NewHandler(productService)
+
+	categoryRepository := category.NewRepository(db)
+	categoryService := category.NewService(categoryRepository)
+	categoryHandler := category.NewHandler(categoryService)
 
 	router := gin.Default()
 
@@ -78,6 +83,12 @@ func main() {
 	router.POST("/products", productHandler.Create)
 	router.PUT("/products/:id", productHandler.Update)
 	router.DELETE("/products/:id", productHandler.Delete)
+
+	router.GET("/categories", categoryHandler.GetAll)
+	router.GET("/categories/:id", categoryHandler.GetByID)
+	router.POST("/categories", categoryHandler.Create)
+	router.PUT("/categories/:id", categoryHandler.Update)
+	router.DELETE("/categories/:id", categoryHandler.Delete)
 
 	log.Println("Server running on http://localhost:8080")
 
